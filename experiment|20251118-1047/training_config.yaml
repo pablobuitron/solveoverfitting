@@ -1,0 +1,23 @@
+hardware:
+  accelerator: mps
+  deterministic: false
+  devices: 1
+  precision: 32
+  profiler: null
+logging:
+  log_interval: 5
+  logging_metrics:
+  - rmse
+model:
+  dropout: 0.2
+  loss: quantile_loss
+optimization:
+  num_workers: 0
+  persistent_workers: false
+  pin_memory: false
+training:
+  batch_size: 64
+  gradient_clip_val: 1.0
+  learning_rate: 0.001
+  max_epochs: 200
+  reduce_lr_patience: 5

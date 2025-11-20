@@ -1,0 +1,5 @@
+attention_head_size: 16
+hidden_continuous_size: 128
+hidden_size: 256
+lstm_layers: 2
+output_size: 7

@@ -1,0 +1,2 @@
+Modificata architettura (guarda model config) e dropout 0.1 -> 0.2
+poiché l'addestramento precedente aveva problemi di overfitting.

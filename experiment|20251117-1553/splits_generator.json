@@ -1,0 +1,1 @@
+{"class_name": "RandomSplitGenerator", "seed": 403, "train_split_ratio": 0.7, "val_split_ratio": 0.15}
