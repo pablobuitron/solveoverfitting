@@ -4,7 +4,7 @@ from typing import Optional
 import pathlib
 from . import experiment
 from ..data import dataset_index, dataset_constants, timeseries_dataset
-from ..data.splits import random_splits_generator, dataset_split, field_splits_generator
+from ..data.splits import random_splits_generator, dataset_split, field_splits_generator, grouped_split_generator
 from ..utils import basic_file_utils
 from ..data.splits import splits_generator
 from ..train import train
@@ -18,7 +18,7 @@ _MODEL_ARCHITECTURE_CONFIG_PATH = pathlib.Path(__file__).parent.parent / 'config
 # strings supported for instantiating splits generators
 SPLITS_GENERATOR_RANDOM = 'random'
 SPLITS_GENERATOR_FIELD_AND_YEAR = 'field_and_year'
-
+SPLITS_GENERATOR_GROUPED = 'grouped'
 
 class ExperimentManager:
     """Manager for experiment lifecycle and orchestration within the Grano.IT pipeline.
@@ -101,6 +101,8 @@ class ExperimentManager:
             return random_splits_generator.RandomSplitGenerator()
         if generator_name == SPLITS_GENERATOR_FIELD_AND_YEAR:
             return field_splits_generator.FieldSplitsGenerator()
+        if generator_name == SPLITS_GENERATOR_GROUPED:
+            return grouped_split_generator.GroupedSplitGenerator()
         else:
             raise ValueError(f'Generator "{generator_name}" is not supported.')
 

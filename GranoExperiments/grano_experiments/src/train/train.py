@@ -143,6 +143,7 @@ class Trainer:
             learning_rate=model_training_config['learning_rate'],
             dropout=model_training_config['dropout'],
             loss=model_training_config['loss'],
+            weight_decay=model_training_config.get('weight_decay', 0.0),
             reduce_on_plateau_patience=model_training_config['reduce_on_plateau_patience'],
             log_interval=model_training_config['log_interval'],
             logging_metrics=model_training_config['logging_metrics'],
@@ -157,6 +158,17 @@ class Trainer:
             save_dir=output_dir.parent,
             name=output_dir.name,
         )
+        callbacks = []
+        early_stopping_config = self.training_config.get('early_stopping')
+        if early_stopping_config:
+            callbacks.append(
+                EarlyStopping(
+                    monitor=early_stopping_config.get('monitor', 'val_loss'),
+                    mode=early_stopping_config.get('mode', 'min'),
+                    patience=early_stopping_config.get('patience', 5),
+                    min_delta=early_stopping_config.get('min_delta', 0.0),
+                )
+            )
         # memo: depending on lightning version, the package to be used is lightning.pytorch or pytorch_lightning
         trainer = lightning.pytorch.Trainer(
             # mandatory parameters
@@ -171,6 +183,7 @@ class Trainer:
             # values that are not configurable right now:
             enable_progress_bar=True,
             enable_model_summary=True,
+            callbacks=callbacks,
         )
         logger.info('Lightning trainer instantiated.')
 

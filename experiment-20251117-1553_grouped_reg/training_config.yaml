@@ -1,0 +1,28 @@
+model:
+  learning_rate: 0.001
+  dropout: 0.2
+  loss: quantile_loss
+  reduce_on_plateau_patience: 5
+  log_interval: 5
+  logging_metrics:
+    - rmse
+  weight_decay: 0.0005
+trainer:
+  max_epochs: 50
+  accelerator: auto
+  devices: auto
+  gradient_clip_val: 1.0
+  num_sanity_val_steps: 0
+
+dataloader:
+  batch_size: 64
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+
+precision: 32
+early_stopping:
+  monitor: val_loss
+  mode: min
+  patience: 6
+  min_delta: 0.001

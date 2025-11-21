@@ -159,7 +159,8 @@ class DatasetBuilder:
         self.time_varying_unknown_reals = configuration['time_varying_unknown_reals']
         self.allow_missing_timesteps = configuration['allow_missing_timesteps']
         self.add_relative_time_idx = configuration['add_relative_time_idx']
-
+        self.split_for_normalization = configuration.get('split_for_normalization', dataset_constants.TRAIN_SPLIT_NAME)
+        
         # dependencies
         self._static_data_cache = file_cache.Hdf5FilesCache(root_dir)
         self._dynamic_data_cache = file_cache.Hdf5FilesCache(root_dir)
@@ -188,7 +189,10 @@ class DatasetBuilder:
 
         data = self._preprocess_final_dataframe(data, backup_group_id_col=True)
         data = self._divide_in_splits(data, use_group_id_backup_col=True)
-        result = self._instantiate_timeseries_datasets(data)
+        result = self._instantiate_timeseries_datasets(
+            data,
+            split_for_normalization=self.split_for_normalization,
+        )
 
         return result
 

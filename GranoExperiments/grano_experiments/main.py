@@ -26,8 +26,9 @@ def main():
     parser.add_argument("--split_generator", type=str,
                         default=experiments_manager.SPLITS_GENERATOR_FIELD_AND_YEAR,
                         help="What kind of split generator to use. Possible values:"
-                             f" {experiments_manager.SPLITS_GENERATOR_RANDOM}, {experiments_manager.SPLITS_GENERATOR_FIELD_AND_YEAR}")
-
+                             f" {experiments_manager.SPLITS_GENERATOR_RANDOM},"
+                             f" {experiments_manager.SPLITS_GENERATOR_FIELD_AND_YEAR},"
+                             f" {experiments_manager.SPLITS_GENERATOR_GROUPED}")
     args = parser.parse_args()
 
     if args.new:
