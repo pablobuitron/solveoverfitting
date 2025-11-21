@@ -1,0 +1,157 @@
+# field_level_aggregation: False # commented because it's going to be replaced
+                               # by better logic that acts upon dataset creation
+
+season_start_month: 10
+season_end_month: 7
+
+# these wheat fields will be ignored when building the TimeSeriesDataset
+wheat_fields_to_exclude:
+  -
+
+# these features will be ignored when building the TimeSeriesDataset
+# the specified name can refer to the macro feature (e.g. 'evi', 'evaporation_from_bare_soil', so using the name of the macro feature, not the column name)
+# or a specific feature (e.g. 'observed_evaporation_from_bare_soil_max', in this case using the name of the final column)
+features_to_exclude:
+  - evi
+  - simple_ratio
+  - observed_evaporation_from_bare_soil_min
+  - observed_evaporation_from_bare_soil_max
+  - observed_evaporation_from_bare_soil_std
+  - observed_evaporation_from_the_top_of_canopy_min
+  - observed_evaporation_from_the_top_of_canopy_max
+  - observed_evaporation_from_the_top_of_canopy_std
+  - observed_evaporation_from_vegetation_transpiration_min
+  - observed_evaporation_from_vegetation_transpiration_max
+  - observed_evaporation_from_vegetation_transpiration_std
+  - observed_skin_temperature_std
+  - observed_soil_temperature_level_1_min
+  - observed_soil_temperature_level_1_max
+  - observed_soil_temperature_level_1_std
+  - observed_soil_temperature_level_2_min
+  - observed_soil_temperature_level_2_max
+  - observed_soil_temperature_level_2_std
+  - observed_soil_temperature_level_3_min
+  - observed_soil_temperature_level_3_max
+  - observed_soil_temperature_level_3_std
+  - observed_surface_net_solar_radiation_min
+  - observed_surface_net_solar_radiation_max
+  - observed_surface_net_solar_radiation_std
+  - observed_total_precipitation_std
+  - observed_volumetric_soil_water_layer_1_min
+  - observed_volumetric_soil_water_layer_1_max
+  - observed_volumetric_soil_water_layer_1_std
+  - observed_volumetric_soil_water_layer_2_min
+  - observed_volumetric_soil_water_layer_2_max
+  - observed_volumetric_soil_water_layer_2_std
+  - observed_volumetric_soil_water_layer_3_min
+  - observed_volumetric_soil_water_layer_3_max
+  - observed_volumetric_soil_water_layer_3_std
+
+
+
+# these parameters will be used as arguments in the TimeSeriesDataset constructor. See its documentation for more details.
+# https://pytorch-forecasting.readthedocs.io/en/v1.4.0/api/pytorch_forecasting.data.timeseries._timeseries.TimeSeriesDataSet.html
+allow_missing_timesteps: true
+add_relative_time_idx: false
+
+# ------------- TimeSeriesDataset columns configuration -------------
+# this is needed for timeseries dataset builder to know which features (in other terms which columns)
+# are static (with numeric or categorical values) and which features are time varying. To know more, read
+# the documentation of TimeSeriesDataset arguments with same names as these keys at
+
+static_categoricals:
+  - static_crusting
+  - static_dimp
+  - static_eawc_top
+  - static_erodi
+  - static_oc_top
+  - static_slopedo
+  - static_textureusda
+
+static_reals:
+  - static_awc
+  - static_bulk_density
+  - static_clay
+  - static_coarse_fragments
+  - static_sand1
+  - static_silt1
+
+time_varying_unknown_reals:
+  # vegetation indices
+  - observed_evi
+  - observed_gndvi
+  - observed_ndre
+  - observed_ndvi
+  - observed_simple_ratio
+
+  # evaporation from bare soil
+  - observed_evaporation_from_bare_soil_mean
+  - observed_evaporation_from_bare_soil_min
+  - observed_evaporation_from_bare_soil_max
+  - observed_evaporation_from_bare_soil_std
+
+  # evaporation_from_the_top_of_canopy
+  - observed_evaporation_from_the_top_of_canopy_mean
+  - observed_evaporation_from_the_top_of_canopy_min
+  - observed_evaporation_from_the_top_of_canopy_max
+  - observed_evaporation_from_the_top_of_canopy_std
+
+  # evaporation from vegetation transpiration
+  - observed_evaporation_from_vegetation_transpiration_mean
+  - observed_evaporation_from_vegetation_transpiration_min
+  - observed_evaporation_from_vegetation_transpiration_max
+  - observed_evaporation_from_vegetation_transpiration_std
+
+  # skin temperature
+  - observed_skin_temperature_mean
+  - observed_skin_temperature_min
+  - observed_skin_temperature_max
+  - observed_skin_temperature_std
+
+  # soil temperature level 1
+  - observed_soil_temperature_level_1_mean
+  - observed_soil_temperature_level_1_min
+  - observed_soil_temperature_level_1_max
+  - observed_soil_temperature_level_1_std
+
+  # soil temperature level 2
+  - observed_soil_temperature_level_2_mean
+  - observed_soil_temperature_level_2_min
+  - observed_soil_temperature_level_2_max
+  - observed_soil_temperature_level_2_std
+
+  # soil temperature level 3
+  - observed_soil_temperature_level_3_mean
+  - observed_soil_temperature_level_3_min
+  - observed_soil_temperature_level_3_max
+  - observed_soil_temperature_level_3_std
+
+  # surface net solar radiation
+  - observed_surface_net_solar_radiation_mean
+  - observed_surface_net_solar_radiation_min
+  - observed_surface_net_solar_radiation_max
+  - observed_surface_net_solar_radiation_std
+
+  # total precipitation
+  - observed_total_precipitation_mean
+  - observed_total_precipitation_min
+  - observed_total_precipitation_max
+  - observed_total_precipitation_std
+
+  # volumetric soil water layer 1
+  - observed_volumetric_soil_water_layer_1_mean
+  - observed_volumetric_soil_water_layer_1_min
+  - observed_volumetric_soil_water_layer_1_max
+  - observed_volumetric_soil_water_layer_1_std
+
+  # volumetric soil water layer 2
+  - observed_volumetric_soil_water_layer_2_mean
+  - observed_volumetric_soil_water_layer_2_min
+  - observed_volumetric_soil_water_layer_2_max
+  - observed_volumetric_soil_water_layer_2_std
+
+  # volumetric soil water layer 3
+  - observed_volumetric_soil_water_layer_3_mean
+  - observed_volumetric_soil_water_layer_3_min
+  - observed_volumetric_soil_water_layer_3_max
+  - observed_volumetric_soil_water_layer_3_std

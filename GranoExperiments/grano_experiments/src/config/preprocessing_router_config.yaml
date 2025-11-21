@@ -1,0 +1,6 @@
+satellite_features:
+  - evi
+  - gndvi
+  - ndre
+  - ndvi
+  - simple_ratio
