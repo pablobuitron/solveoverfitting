@@ -21,6 +21,7 @@ import pathlib
 import time
 import os
 import torch
+torch.set_float32_matmul_precision("high")
 from lightning.pytorch import loggers as lightning_loggers
 import pytorch_forecasting
 import lightning.pytorch

@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytorch_forecasting
 from pytorch_forecasting import TimeSeriesDataSet
+from pytorch_forecasting.data.encoders import NaNLabelEncoder  # NEW
 
 from .utils import timestamps_utils, ds_utils, file_cache
 from . import dataset_index, dataset_constants
@@ -160,7 +161,7 @@ class DatasetBuilder:
         self.allow_missing_timesteps = configuration['allow_missing_timesteps']
         self.add_relative_time_idx = configuration['add_relative_time_idx']
         self.split_for_normalization = configuration.get('split_for_normalization', dataset_constants.TRAIN_SPLIT_NAME)
-        
+
         # dependencies
         self._static_data_cache = file_cache.Hdf5FilesCache(root_dir)
         self._dynamic_data_cache = file_cache.Hdf5FilesCache(root_dir)
@@ -271,7 +272,7 @@ class DatasetBuilder:
 
         # static categorical operations
         cols_to_remove = [col for col in self.static_categoricals if col not in df.columns]
-        [self._remove_static_feature(col)for col in cols_to_remove]
+        [self._remove_static_feature(col) for col in cols_to_remove]
 
         df = df.dropna(subset=self.static_categoricals)
         df = self._cast_static_categoricals(df)
@@ -297,8 +298,6 @@ class DatasetBuilder:
         df[COLUMN_GROUP_ID] = df[COLUMN_GROUP_ID].map(group_id_mapping).astype(int)
         return df
 
-
-
     def _divide_in_splits(self, data: pd.DataFrame, use_group_id_backup_col: bool = True) -> Dict[str, pd.DataFrame]:
         result = {}
         col_to_use = COLUMN_TMP_GROUP_ID_STR if use_group_id_backup_col else COLUMN_GROUP_ID
@@ -313,6 +312,19 @@ class DatasetBuilder:
             result[split.split_name] = split_data
 
         return result
+
+    def _build_categorical_encoders(self) -> Dict[str, NaNLabelEncoder]:
+        """
+        Build categorical encoders for static categorical features.
+
+        Using NaNLabelEncoder(add_nan=True) ensures that categories which are present
+        only in validation/test (due to grouped splits) do not raise KeyError but are
+        mapped to an 'unknown' index instead.
+        """
+        return {
+            col: NaNLabelEncoder(add_nan=True)
+            for col in self.static_categoricals
+        }
 
     def _instantiate_timeseries_datasets(
             self,
@@ -480,7 +492,6 @@ class DatasetBuilder:
             #                                                                                 data,
             #                                                                                 missing_data_mask)
 
-
             timestamps_ids, data = self._preprocess_and_upsample_arrays(macro_feature,
                                                                         parsed_timestamps,
                                                                         timestamps_ids,
@@ -584,6 +595,8 @@ class DatasetBuilder:
             add_relative_time_idx=self.add_relative_time_idx,
             predict_mode=self._decide_predict_mode(split_name),
             max_prediction_length=1,
+            #categorical_encoders=self._build_categorical_encoders(),  # NEW
+            max_encoder_length=120,
         )
 
     def _build_reference_dataset(self, df, split_name: str) -> TimeSeriesDataSet:

@@ -1,7 +1,0 @@
-{
-  "class_name": "GroupedSplitGenerator",
-  "seed": 403,
-  "train_split_ratio": 0.7,
-  "val_split_ratio": 0.15,
-  "groupby_id_indices": [0, 1]
-}

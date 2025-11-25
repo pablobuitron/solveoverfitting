@@ -1,0 +1,19 @@
+dataloader:
+  batch_size: 64
+  num_workers: 0
+  persistent_workers: false
+  pin_memory: false
+model:
+  dropout: 0.2
+  learning_rate: 0.001
+  log_interval: 5
+  logging_metrics:
+  - rmse
+  loss: quantile_loss
+  reduce_on_plateau_patience: 5
+trainer:
+  accelerator: auto
+  devices: auto
+  gradient_clip_val: 1.0
+  max_epochs: 200
+  num_sanity_val_steps: 0

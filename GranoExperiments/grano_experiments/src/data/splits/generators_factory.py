@@ -1,22 +1,45 @@
-from typing import Type
+from typing import Dict, Type, Any
 
-from . import splits_generator
-
-_REGISTRY: dict[str, Type[splits_generator.SplitsGenerator]] = {}
-
-
-def register_splits_generator(sg: Type[splits_generator.SplitsGenerator]) -> Type[splits_generator.SplitsGenerator]:
-    _REGISTRY[sg.__name__] = sg
-    return sg
+# Registro global de generadores de splits
+_REGISTRY: Dict[str, Type[Any]] = {}
 
 
-def from_dict(input_dict: dict):
-    class_name = input_dict.get('class_name')
-    if not class_name:
-        raise ValueError('No class name provided inside the input dictionary')
-    if class_name not in _REGISTRY:
-        raise ValueError(f'Class name already not registered, '
-                         f'please ensure you are using the decorator register_splits_generator inside {class_name}')
+def register_splits_generator(cls: Type[Any]) -> Type[Any]:
+    """
+    Decorador para registrar un generador de splits.
 
-    class_ = _REGISTRY[class_name]
-    return class_.from_dict(input_dict)
+    El nombre de clase (cls.__name__) se usará como 'class_name' en los
+    diccionarios serializados que guarda Experiment.
+    """
+    _REGISTRY[cls.__name__] = cls
+    return cls
+
+
+def from_dict(d: dict) -> Any:
+    """
+    Reconstruye un generador de splits a partir de un diccionario.
+
+    Formato esperado:
+      {
+        "class_name": "PerFieldPointShuffleSplitGenerator",
+        "init_args": {
+            "train_ratio": 0.7,
+            "validation_ratio": 0.15,
+            "test_ratio": 0.15,
+            "seed": 403
+        }
+      }
+    """
+    class_name = d.get("class_name")
+    if class_name is None:
+        raise ValueError("Missing 'class_name' in splits generator description")
+
+    cls = _REGISTRY.get(class_name)
+    if cls is None:
+        raise ValueError(
+            f"Class name already not registered, please ensure you are using "
+            f"the decorator register_splits_generator inside {class_name}"
+        )
+
+    init_args = d.get("init_args", {}) or {}
+    return cls(**init_args)

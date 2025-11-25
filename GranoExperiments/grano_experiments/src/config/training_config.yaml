@@ -1,99 +1,30 @@
-# precision: 16-mixed # set to null or simply comment the line to handle it automatically
-# Notes on precision parameter:
-# 20251118 | was 16-mixed for better performances, but raised some Exceptions
-# 20251119 | commented so that lighting handles it automatically.
-#            It seems like training performances are ok and.
+# Training config — versión 50 epochs según recomendaciones de Giovanni
 
 model:
   learning_rate: 0.001
-  dropout: 0.2
+  dropout: 0.35              # más regularización
   loss: quantile_loss
-  reduce_on_plateau_patience: 5 # refers to the learning rate
+  reduce_on_plateau_patience: 5
   log_interval: 5
   logging_metrics:
     - rmse
-#    - mae # supported, unused for now
+  weight_decay: 0.001      # L2 strong
 
 trainer:
-  max_epochs: 200
+  max_epochs: 50             # <<<<<< IMPORTANTE, según Giovanni
   accelerator: auto
   devices: auto
   gradient_clip_val: 1.0
-  num_sanity_val_steps: 0 # Skip sanity check to avoid MPS buffer issues
+  num_sanity_val_steps: 0
 
-# Dataloader configuration. This whole dictionary can be commented/unspecified
+early_stopping:
+  monitor: val_loss
+  mode: min
+  patience: 5                # un poco más alta que antes
+  min_delta: 0.001         # evitar parar demasiado pronto
+
 dataloader:
-  # optional parameters
-  batch_size: 64
-  num_workers: 0 # Use 4 cores out of 11 | lowered from 8 to 4 to try and fix semaphore leakage problem |
-  # TODO |> GT memo: ho testato temporaneamente num_workers a 0 per rendere stabile l'addestramento e portare a casa alcuni test,
-  # appena possibile vedere se e a quanto posso settare questo parametro
-  pin_memory: false # MPS doesn't support pin_memory TODO |> verificare
-  persistent_workers: false # also for mps stability TODO |> verificare
-
-
-
-## Checkpoints every 5k steps balance safety vs. disk usage for long (200 epoch) runs.
-#training_mode: base
-#checkpoint:
-#  enabled: true
-#  every_n_steps: 5000
-#  save_last: true
-#  save_top_k: -1
-## These dataloader settings (cache/prefetch) delivered ~7 steps/s without exhausting RAM.
-#data_config:
-#  cache_size: 256
-#  hdf5_chunk_size: 64
-#  prefetch_factor: 24
-#  use_feature_dataset: true
-#  use_zarr: false
-## Explicitly pinning to MPS + 16-mixed keeps Apple Silicon utilisation optimal.
-#hardware:
-#  accelerator: mps
-#  deterministic: false
-#  devices: 1
-#  precision: 16-mixed
-#  profiler: null
-#learning_rate_scheduler:
-#  anneal_strategy: cos
-#  cycle_momentum: true
-#  div_factor: 25
-#  final_div_factor: 1e4
-#  max_lr: 0.001
-#  pct_start: 0.1
-#  scheduler_type: OneCycleLR
-#logging:
-#  log_interval: 5
-#  logging_metrics:
-#  - rmse
-#  - mae
-#model:
-#  dropout: 0.2
-#  loss: quantile_loss
-#  loss_params: {}
-#monitoring:
-#  resource:
-#    enabled: true
-#    interval_sec: 2.0
-#  step_stats:
-#    enabled: true
-#    log_every_n_steps: 100
-## 10 workers saturate the 11-core CPU without triggering macOS warnings; pin_memory stays off for MPS.
-#optimization:
-#  gradient_accumulation_steps: 1
-#  num_workers: 10
-#  persistent_workers: true
-#  pin_memory: false
-#torch_compile:
-#  enabled: false
-#  mode: reduce-overhead
-## Batch 40 keeps epochs at ~9-10 min. Patience raised to 200 to allow full run, matching CLI run.
-#training:
-#  batch_size: 40
-#  early_stopping_patience: 200
-#  epochs: 200
-#  gradient_clip_val: 1.0
-#  learning_rate: 0.001
-#  max_epochs: 200
-#  min_delta: 0.001
-#  reduce_lr_patience: 5
+  batch_size: 128
+  num_workers: 16             # seguro y estable
+  pin_memory: true
+  persistent_workers: true

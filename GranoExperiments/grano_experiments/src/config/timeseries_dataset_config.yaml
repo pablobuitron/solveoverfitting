@@ -53,6 +53,8 @@ features_to_exclude:
 # https://pytorch-forecasting.readthedocs.io/en/v1.4.0/api/pytorch_forecasting.data.timeseries._timeseries.TimeSeriesDataSet.html
 allow_missing_timesteps: true
 add_relative_time_idx: false
+add_categorical_na: true
+
 
 # ------------- TimeSeriesDataset columns configuration -------------
 # this is needed for timeseries dataset builder to know which features (in other terms which columns)
