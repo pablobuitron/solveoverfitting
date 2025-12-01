@@ -12,7 +12,7 @@ from baseline_rf import (
 
 
 class MLPRegressor(nn.Module):
-    def __init__(self, in_features):
+    def __init__(self, in_features: int):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(in_features, 128),
@@ -26,20 +26,34 @@ class MLPRegressor(nn.Module):
             nn.Linear(32, 1),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Return a 1D tensor of predictions
         return self.net(x).squeeze(-1)
 
 
-def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, patience=30):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Usando device: {device}")
+def train_mlp(
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    max_epochs: int = 300,
+    batch_size: int = 64,
+    patience: int = 30,
+) -> float:
+    """
+    Train a simple MLP regressor with early stopping on validation loss.
 
-    # Escalador
+    Returns the validation RMSE of the best model (according to val loss).
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Standardize features
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_val_scaled = scaler.transform(X_val)
 
-    # Tensores
+    # Build tensors
     X_train_t = torch.tensor(X_train_scaled, dtype=torch.float32)
     y_train_t = torch.tensor(y_train, dtype=torch.float32)
     X_val_t = torch.tensor(X_val_scaled, dtype=torch.float32)
@@ -55,7 +69,11 @@ def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, pat
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=10, verbose=True
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=10,
+        verbose=True,
     )
 
     best_val_loss = float("inf")
@@ -63,7 +81,7 @@ def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, pat
     epochs_no_improve = 0
 
     for epoch in range(max_epochs):
-        # --- Train ---
+        # --- Training loop ---
         model.train()
         train_losses = []
         for xb, yb in train_loader:
@@ -77,7 +95,7 @@ def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, pat
             optimizer.step()
             train_losses.append(loss.item())
 
-        # --- Val ---
+        # --- Validation loop ---
         model.eval()
         val_losses = []
         with torch.no_grad():
@@ -92,9 +110,12 @@ def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, pat
         val_loss = np.mean(val_losses)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch+1:03d} | train_loss={train_loss:.4f} | val_loss={val_loss:.4f}")
+        print(
+            f"Epoch {epoch + 1:03d} | "
+            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f}"
+        )
 
-        # Early stopping
+        # Early stopping logic
         if val_loss < best_val_loss - 1e-4:
             best_val_loss = val_loss
             best_state = {
@@ -106,16 +127,16 @@ def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, pat
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= patience:
-                print(f"Early stopping en epoch {epoch+1}")
+                print(f"Early stopping at epoch {epoch + 1}")
                 break
 
-    # Cargar mejor modelo
+    # Load best model (and corresponding scaler) if we found one
     if best_state is not None:
         model.load_state_dict(best_state["model"])
         scaler.mean_ = best_state["scaler_mean"]
         scaler.scale_ = best_state["scaler_scale"]
 
-    # Predicciones en val para RMSE
+    # Final validation predictions for RMSE
     model.eval()
     with torch.no_grad():
         X_val_scaled = scaler.transform(X_val)
@@ -127,16 +148,16 @@ def train_mlp(X_train, y_train, X_val, y_val, max_epochs=300, batch_size=64, pat
 
 
 def main():
-    print("Construyendo DataFrame largo y split grouped por campo-año (MLP)...")
+    print("Building long DataFrame and grouped split by field-year (MLP)...")
     train_df, val_df, ts_cfg = build_long_df_and_grouped_split()
 
     print(f"Train rows: {len(train_df)}, Val rows: {len(val_df)}")
 
-    print("Agregando features por group_id (punto dentro del campo)...")
+    print("Aggregating features per group_id (point within a field)...")
     X_train_df, y_train, agg_train = make_aggregated_features(train_df, ts_cfg)
     X_val_df, y_val, agg_val = make_aggregated_features(val_df, ts_cfg)
 
-    # Asegurarnos de que no queden NaNs
+    # Make sure we don't keep any NaNs around
     X_train_df = X_train_df.copy()
     X_val_df = X_val_df.copy()
     X_train_df = X_train_df.fillna(X_train_df.mean(numeric_only=True))
@@ -155,9 +176,9 @@ def main():
         patience=40,
     )
 
-    print("\n=== BASELINE MLP (grouped por campo-año) ===")
+    print("\n=== MLP BASELINE (grouped by field-year) ===")
     print(f"RMSE_val: {rmse_val:.4f}")
-    print("(Para comparar: RF ~ 1.17, XGB ~ 1.47, TFT grouped ~ 4.02)")
+    print("(For reference: RF ~ 1.17, XGB ~ 1.47, TFT grouped ~ 4.02)")
 
 
 if __name__ == "__main__":

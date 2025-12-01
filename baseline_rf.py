@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import GroupShuffleSplit
 
-# Imports del proyecto GranoExperiments
+# Imports from GranoExperiments
 from GranoExperiments.grano_experiments.src.data import (
     dataset_index,
     timeseries_dataset,
@@ -16,7 +16,7 @@ from GranoExperiments.grano_experiments.src.utils import basic_file_utils
 ROOT = pathlib.Path(__file__).resolve().parent
 DATASET_ROOT = ROOT / "grano_it_dataset"
 
-# Usamos la misma config global del timeseries dataset
+# Reuse the same (global) config used for the time series dataset
 TS_CFG_PATH = (
     ROOT
     / "GranoExperiments"
@@ -29,21 +29,22 @@ TS_CFG_PATH = (
 
 def build_long_df_and_grouped_split():
     """
-    Construye el DataFrame "largo" (una fila por group_id, time_idx)
-    usando el mismo DatasetBuilder que el TFT, pero sin crear TimeSeriesDataSet.
+    Build the "long" DataFrame (one row per group_id, time_idx)
+    using the same DatasetBuilder as the TFT, but without creating a TimeSeriesDataSet.
 
-    Luego hace un split 70/30 train/val agrupando por (year, field),
-    es decir por "campo-año", de forma similar al split grouped del experimento.
+    Then perform a 70/30 train/validation split grouping by (year, field),
+    i.e. by "field-year", to mimic the grouped split used in the TFT experiment.
     """
 
-    # 1) Cargar configuración del timeseries dataset
+    # 1) Load the time series dataset config
     ts_cfg = basic_file_utils.load_yaml(TS_CFG_PATH)
 
-    # 2) Construir el índice a partir de index.csv
+    # 2) Build the dataset index from index.csv
     index_file = DATASET_ROOT / "index.csv"
     ds_idx = dataset_index.DatasetIndex(index_file)
 
-    # 3) Crear el DatasetBuilder SIN splits (los haremos nosotros)
+    # 3) Create the DatasetBuilder without predefined splits
+    #    (we'll handle the train/val split manually here).
     builder = timeseries_dataset.DatasetBuilder(
         root_dir=DATASET_ROOT,
         ds_index=ds_idx,
@@ -53,28 +54,31 @@ def build_long_df_and_grouped_split():
         quick_debug=False,
     )
 
-    # 4) Construir el DataFrame "largo"
-    #    Esto es básicamente lo que hace build(), pero sin dividir en splits ni crear TimeSeriesDataSet
+    # 4) Build the "long" DataFrame
+    #    This is essentially what builder.build() does, but without
+    #    creating splits or a TimeSeriesDataSet object.
     data = builder._build_dataframe()
 
-    # Cerramos caches de HDF5 como hace build()
+    # Close HDF5 caches, just like builder.build() would do
     builder._static_data_cache.close_files()
     builder._dynamic_data_cache.close_files()
 
-    # Preprocesado final (cast de tipos, quitar NaNs raras, mapear group_id a ints, etc.)
-    # backup_group_id_col=True -> crea la columna COLUMN_TMP_GROUP_ID_STR con el ID original en string
+    # Final preprocessing (type casting, removing weird NaNs,
+    # mapping group_id to ints, etc.).
+    # backup_group_id_col=True -> creates COLUMN_TMP_GROUP_ID_STR
+    # with the original string group_id.
     data = builder._preprocess_final_dataframe(data, backup_group_id_col=True)
 
-    # 5) Construir un identificador de "campo-año" a partir de la columna de backup
+    # 5) Build a "field-year" identifier from the backup column
     tmp_col = timeseries_dataset.COLUMN_TMP_GROUP_ID_STR
-    splitter = dataset_index.ID_SPLITTER  # normalmente es '|'
+    splitter = dataset_index.ID_SPLITTER  # usually '|'
 
-    # tmp_group_id_str tiene algo como "2022|field_1|point_3"
+    # tmp_group_id_str looks like "2022|field_1|point_3"
     parts = data[tmp_col].str.split(splitter, n=2, expand=True)
-    # campo-año: "2022|field_1"
+    # field-year: "2022|field_1"
     data["fieldyear_group"] = parts[0] + splitter + parts[1]
 
-    # 6) Hacer split train/val 70/30 agrupando por campo-año (fieldyear_group)
+    # 6) Train/validation split (70/30) grouped by field-year (fieldyear_group)
     groups = data["fieldyear_group"]
     gss = GroupShuffleSplit(
         n_splits=1,
@@ -92,25 +96,25 @@ def build_long_df_and_grouped_split():
 
 def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
     """
-    A partir del DataFrame "largo" (group_id, time_idx, target, features),
-    construye un DataFrame "por group_id" con:
+    Starting from the "long" DataFrame (group_id, time_idx, target, features),
+    build a "per group_id" DataFrame with:
 
-      - static_categoricals (tal cual, 1 valor por group_id)
+      - static_categoricals (as is: one value per group_id)
       - static_reals
-      - agregados (mean, max, min, std) de cada time_varying_unknown_real
-      - target (yield) único por group_id
+      - aggregated (mean, max, min, std) time_varying_unknown_real features
+      - a single target (yield) per group_id
 
-    Devuelve: X (features), y (target), y el DataFrame agreg. por si quieres mirarlo.
+    Returns: X (features), y (target), and the aggregated DataFrame for inspection.
     """
     gid_col = timeseries_dataset.COLUMN_GROUP_ID
     target_col = timeseries_dataset.COLUMN_TARGET
 
     group = df.groupby(gid_col)
 
-    # Target: constante por group_id -> cogemos el primero
+    # Target: assumed constant per group_id -> take the first value
     target = group[target_col].first()
 
-    # Features estáticas
+    # Static features
     static_cats = ts_cfg["static_categoricals"]
     static_reals = ts_cfg["static_reals"]
     static_cols = [c for c in static_cats + static_reals if c in df.columns]
@@ -120,7 +124,7 @@ def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
     else:
         static_part = pd.DataFrame(index=target.index)
 
-    # Features dinámicas
+    # Time-varying features
     tv_cols = [c for c in ts_cfg["time_varying_unknown_reals"] if c in df.columns]
 
     agg_frames = []
@@ -141,11 +145,11 @@ def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
     else:
         dyn_part = pd.DataFrame(index=target.index)
 
-    # Combinar todo
+    # Put everything together
     full = pd.concat([static_part, dyn_part], axis=1)
     full[target_col] = target
 
-    # Limpiar NaNs (muy básico, pero suficiente para el baseline)
+    # Basic NaN cleaning (simple but good enough for a baseline)
     full = full.dropna(axis=0)
 
     y = full[target_col].values
@@ -155,24 +159,24 @@ def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
 
 
 def main():
-    print("Construyendo DataFrame largo y split grouped por campo-año...")
+    print("Building long DataFrame and grouped split by field-year...")
     train_df, val_df, ts_cfg = build_long_df_and_grouped_split()
 
     print(f"Train rows: {len(train_df)}, Val rows: {len(val_df)}")
 
-    print("Agregando features por group_id (punto dentro del campo)...")
+    print("Aggregating features per group_id (point within a field)...")
     X_train, y_train, agg_train = make_aggregated_features(train_df, ts_cfg)
     X_val, y_val, agg_val = make_aggregated_features(val_df, ts_cfg)
 
     print(f"Train groups: {X_train.shape[0]}, features: {X_train.shape[1]}")
     print(f"Val groups:   {X_val.shape[0]}, features: {X_val.shape[1]}")
 
-    print("Entrenando RandomForestRegressor baseline (RMSE sobre campos/años no vistos)...")
+    print("Training RandomForestRegressor baseline (RMSE on unseen field-years)...")
     rf = RandomForestRegressor(
         n_estimators=500,
         max_depth=None,
         min_samples_leaf=3,
-        n_jobs=-1,          # usa todos los hilos disponibles
+        n_jobs=-1,          # use all available cores
         random_state=42,
     )
     rf.fit(X_train, y_train)
@@ -180,9 +184,9 @@ def main():
     preds_val = rf.predict(X_val)
     rmse_val = np.sqrt(mean_squared_error(y_val, preds_val))
 
-    print("\n=== BASELINE RANDOM FOREST (grouped por campo-año) ===")
+    print("\n=== RANDOM FOREST BASELINE (grouped by field-year) ===")
     print(f"RMSE_val: {rmse_val:.4f}")
-    print("(Para comparar: TFT grouped ~ 4.02 en tu experimento 1851)")
+    print("(For reference: TFT grouped ~ 4.02 in experiment 1851)")
 
 
 if __name__ == "__main__":

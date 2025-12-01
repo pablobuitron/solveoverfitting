@@ -21,6 +21,7 @@ SPLITS_GENERATOR_FIELD_AND_YEAR = "field_and_year"
 SPLITS_GENERATOR_GROUPED = "grouped"
 # nuevo: split "simple" por puntos dentro de cada campo (tipo Giovanni)
 SPLITS_GENERATOR_PER_FIELD_POINT = "per_field_point"
+SPLITS_GENERATOR_FIELD_YEAR_HOLDOUT = "field_year_holdout"
 
 
 class ExperimentManager:
@@ -63,9 +64,9 @@ class ExperimentManager:
         if generator_name == SPLITS_GENERATOR_GROUPED:
             return grouped_split_generator.GroupedSplitGenerator()
         if generator_name == SPLITS_GENERATOR_PER_FIELD_POINT:
-            # nuestro generador "simple" al estilo Giovanni:
-            # shuffle de puntos dentro de cada campo/annualidad (70/15/15)
             return splits_generator.PerFieldPointShuffleSplitGenerator()
+        if generator_name == SPLITS_GENERATOR_FIELD_YEAR_HOLDOUT:
+            return splits_generator.PerFieldYearHoldoutSplitGenerator()
         else:
             raise ValueError(f'Generator "{generator_name}" is not supported.')
 

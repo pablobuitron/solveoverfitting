@@ -1,6 +1,8 @@
-from typing import Dict, Type, Any
+from __future__ import annotations
 
-# Registro global de generadores de splits
+from typing import Any, Dict, Type
+
+# Registro global de generadores
 _REGISTRY: Dict[str, Type[Any]] = {}
 
 
@@ -8,38 +10,39 @@ def register_splits_generator(cls: Type[Any]) -> Type[Any]:
     """
     Decorador para registrar un generador de splits.
 
-    El nombre de clase (cls.__name__) se usará como 'class_name' en los
-    diccionarios serializados que guarda Experiment.
+    Se usa así:
+
+        @register_splits_generator
+        class RandomSplitGenerator(SplitsGenerator):
+            ...
+
+    Luego podemos reconstruirlo desde un diccionario con from_dict.
     """
     _REGISTRY[cls.__name__] = cls
     return cls
 
 
-def from_dict(d: dict) -> Any:
+def from_dict(config: Dict[str, Any]):
     """
-    Reconstruye un generador de splits a partir de un diccionario.
+    Reconstruye un generador de splits a partir del diccionario guardado
+    en el Experiment (self.experiment.splits_generator_data).
 
-    Formato esperado:
-      {
-        "class_name": "PerFieldPointShuffleSplitGenerator",
-        "init_args": {
-            "train_ratio": 0.7,
-            "validation_ratio": 0.15,
-            "test_ratio": 0.15,
-            "seed": 403
-        }
-      }
+    Espera al menos:
+        config["class_name"]: nombre de la clase registrada
     """
-    class_name = d.get("class_name")
+    class_name = config.get("class_name", None)
     if class_name is None:
-        raise ValueError("Missing 'class_name' in splits generator description")
+        raise ValueError(f'config["class_name"] ausente en {config}')
 
     cls = _REGISTRY.get(class_name)
     if cls is None:
         raise ValueError(
-            f"Class name already not registered, please ensure you are using "
-            f"the decorator register_splits_generator inside {class_name}"
+            f'Class name "{class_name}" not registered. '
+            f"Available: {list(_REGISTRY.keys())}"
         )
 
-    init_args = d.get("init_args", {}) or {}
-    return cls(**init_args)
+    # Si la clase define from_dict, la usamos; si no, construimos sin args.
+    if hasattr(cls, "from_dict") and callable(getattr(cls, "from_dict")):
+        return cls.from_dict(config)
+
+    return cls()

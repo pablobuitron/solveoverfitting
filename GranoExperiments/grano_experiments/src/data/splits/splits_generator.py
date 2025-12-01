@@ -1,32 +1,21 @@
 import pathlib
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import numpy as np
 import pandas as pd
 
 from .. import dataset_index, dataset_constants
-from .generators_factory import register_splits_generator
+from . import generators_factory
 
 COLUMN_ID = "id"
 
 
-class SplitsGenerator:
-    """
-    Clase base vacía para generadores de splits.
-
-    Se usa sólo para tipado y para mantener compatibilidad con el código
-    que hace `from ..data.splits.splits_generator import SplitsGenerator`.
-    """
-    pass
-
-
 def from_csv(path: str) -> "DatasetSplit":
     """
-    Allows to instantiate a DatasetSplit from a CSV file.
+    Permite instanciar un DatasetSplit desde un CSV con columna 'id'.
 
-    NOTE: kept for backward compatibility. For pre-generated splits
-    you are already using `dataset_split.from_csv`, so this helper is
-    essentially redundant but harmless.
+    (Compatibilidad hacia atrás; en otros puntos del código se usa
+    también dataset_split.from_csv, no pasa nada por tener ambas cosas.)
     """
     split_name = pathlib.Path(path).stem
     df = pd.read_csv(path)
@@ -35,36 +24,24 @@ def from_csv(path: str) -> "DatasetSplit":
 
 
 class DatasetSplit:
-    """Represents a dataset split containing a list of IDs.
-
-    This class encapsulates the information for a single data split (e.g.,
-    train, validation, test), including its name and the list of IDs
-    belonging to that split. It provides a method to persist the split
-    to a CSV file.
-    """
+    """Representa un dataset split con una lista de IDs."""
 
     def __init__(self, split_name: str, ids: List[str]):
-        """Initializes the DatasetSplit.
-
+        """
         Args:
-            split_name: The name of the split (e.g., 'train', 'val', 'test').
-            ids: A list of IDs belonging to this split.
+            split_name: nombre del split ('train', 'val', 'test', etc.).
+            ids: lista de IDs pertenecientes a este split.
         """
         self.split_name = split_name
         self.ids = ids
 
     def persist(self, output_dir: pathlib.Path):
-        """Saves the split to a CSV file.
-
-        The CSV file will contain a single column named 'id' with the list
-        of IDs for the split. The file will be named '<split_name>.csv'.
-
-        Args:
-            output_dir: The directory where the CSV file will be saved.
+        """
+        Guarda el split en un csv '<split_name>.csv' con una columna 'id'.
         """
         df = pd.DataFrame()
         df[COLUMN_ID] = self.ids
-        output_path = output_dir / (self.split_name + ".csv")
+        output_path = pathlib.Path(output_dir) / (self.split_name + ".csv")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path, index=False)
 
@@ -76,23 +53,72 @@ class DatasetSplit:
 
 
 # ---------------------------------------------------------------------------
-# Nuevo generador de splits: "per_field_point" (shuffle de puntos dentro
-# de cada campo-año, como en el experimento “bueno” de Giovanni)
+# Clase base para generadores de splits (lo que busca experiment.py)
 # ---------------------------------------------------------------------------
 
 
-@register_splits_generator
+class SplitsGenerator:
+    """
+    Clase base simple. Las subclases deben implementar generate_splits().
+
+    Además, damos una implementación por defecto de generate_splits_files()
+    y to_dict(), que es lo que usa Experiment para serializar el generador.
+    """
+
+    def generate_splits(self, ids: List[str]) -> Dict[str, DatasetSplit]:
+        raise NotImplementedError
+
+    def generate_splits_files(self, dataset_index_path: pathlib.Path, output_dir: pathlib.Path):
+        """
+        Genera ficheros de splits (train/val/test) leyendo el index.csv
+        y llamando a generate_splits().
+
+        Esto se usa solo si llamas a new_experiment(..., pre_generate_splits=True).
+        """
+        df = pd.read_csv(dataset_index_path)
+        if dataset_index.COLUMN_ID in df.columns:
+            all_ids = df[dataset_index.COLUMN_ID].tolist()
+        elif COLUMN_ID in df.columns:
+            all_ids = df[COLUMN_ID].tolist()
+        else:
+            raise RuntimeError(
+                f"No se encuentra columna de IDs ni '{dataset_index.COLUMN_ID}' "
+                f"ni '{COLUMN_ID}' en {dataset_index_path}"
+            )
+
+        splits = self.generate_splits(all_ids)
+        output_dir = pathlib.Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for split in splits.values():
+            split.persist(output_dir)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Representación mínima para guardar en el Experiment.
+        Las subclases pueden extender este diccionario.
+        """
+        return {"class_name": self.__class__.__name__}
+
+
+# ---------------------------------------------------------------------------
+# Tu generador “simple” tipo Giovanni: PerFieldPointShuffleSplitGenerator
+#   – para cada (year, field) mezcla group_id
+#   – 70% train, 15% val, 15% test
+# ---------------------------------------------------------------------------
+
+
+@generators_factory.register_splits_generator
 class PerFieldPointShuffleSplitGenerator(SplitsGenerator):
     """
-    Splitter 'simple' al estilo Giovanni:
+    Split 'simple' al estilo Giovanni:
 
     - Para cada campo (y anualidad) toma todos los group_id (= puntos en el campo),
       los mezcla aleatoriamente de forma reproducible.
     - Asigna ~70% al train, 15% al validation y 15% al test.
 
-    Este esquema hace que train/val sean muy parecidos (útil para debugging
-    y tuning), aunque es menos realista como escenario de producción que
-    un split estrictamente por campo-año.
+    Es útil para tener train/val muy parecidos y ver claramente si
+    el modelo está overfitteando o no.
     """
 
     def __init__(
@@ -110,11 +136,6 @@ class PerFieldPointShuffleSplitGenerator(SplitsGenerator):
         self.test_ratio = test_ratio
         self.seed = seed
 
-    # ------------------------------------------------------------------
-    # Interfaz que usa DatasetBuilder: generate_splits(ids)
-    #   ids es la lista de group_id (strings tipo 'year<SPLITTER>field<SPLITTER>point')
-    #   devolvemos un dict: split_name -> DatasetSplit
-    # ------------------------------------------------------------------
     def generate_splits(self, ids: List[str]) -> Dict[str, DatasetSplit]:
         rng = np.random.RandomState(self.seed)
 
@@ -134,7 +155,6 @@ class PerFieldPointShuffleSplitGenerator(SplitsGenerator):
         test_ids: List[str] = []
 
         for (year, field), group_list in by_field.items():
-            # orden estable + sin duplicados
             group_list = sorted(set(group_list))
             rng.shuffle(group_list)
 
@@ -144,7 +164,6 @@ class PerFieldPointShuffleSplitGenerator(SplitsGenerator):
 
             n_train = int(round(self.train_ratio * n))
             n_val = int(round(self.validation_ratio * n))
-            # el resto a test
             n_test = max(0, n - n_train - n_val)
 
             train_ids.extend(group_list[:n_train])
@@ -164,32 +183,111 @@ class PerFieldPointShuffleSplitGenerator(SplitsGenerator):
         }
         return splits
 
-    # ------------------------------------------------------------------
-    # Interfaz que usa ExperimentManager si se piden splits pre-generados:
-    #   generate_splits_files(index.csv, experiment_dir)
-    # ------------------------------------------------------------------
-    def generate_splits_files(self, dataset_index_path: pathlib.Path, output_dir: pathlib.Path):
+    def to_dict(self) -> Dict[str, Any]:
         """
-        Genera ficheros CSV de splits (train/val/test) a partir del index del dataset.
+        Guardamos también los parámetros del split por si luego queremos
+        reconstruirlo exactamente igual.
+        """
+        return {
+            "class_name": self.__class__.__name__,
+            "train_ratio": self.train_ratio,
+            "validation_ratio": self.validation_ratio,
+            "test_ratio": self.test_ratio,
+            "seed": self.seed,
+        }
+    
+@generators_factory.register_splits_generator
+class PerFieldYearHoldoutSplitGenerator(SplitsGenerator):
+    """
+    Split más realista: holdout por anualidad dentro del mismo campo.
 
-        Este método se usa solo si llamas a new_experiment(..., pre_generate_splits=True).
-        En tus ejecuciones actuales no lo estás usando, pero lo dejamos implementado
-        para coherencia con el resto de generadores.
+    Lógica:
+      - Los IDs son tipo 'year|owner|field|pX'.
+      - Para cada (owner, field) agrupamos por año.
+      - Elegimos un año de holdout (por defecto el más reciente -> 'latest').
+      - Todos los puntos de ese año van a validation.
+      - Los puntos de los otros años van a train.
+      - No devolvemos 'test' (solo train/val) para evitar splits vacíos.
+    """
+
+    def __init__(self, holdout_strategy: str = "latest"):
         """
-        df = pd.read_csv(dataset_index_path)
-        if dataset_index.COLUMN_ID in df.columns:
-            all_ids = df[dataset_index.COLUMN_ID].tolist()
-        elif COLUMN_ID in df.columns:
-            all_ids = df[COLUMN_ID].tolist()
-        else:
+        Args:
+            holdout_strategy: 'latest' (año más reciente) o 'earliest' (año más antiguo).
+        """
+        if holdout_strategy not in ("latest", "earliest"):
+            raise ValueError("holdout_strategy must be 'latest' or 'earliest'")
+        self.holdout_strategy = holdout_strategy
+
+    def generate_splits(self, ids: List[str]) -> Dict[str, DatasetSplit]:
+        # Mapa: (owner, field) -> {year -> [ids...]}
+        by_field_year: Dict[tuple, Dict[str, List[str]]] = {}
+
+        for gid in ids:
+            gid_str = str(gid)
+            parts = gid_str.split(dataset_index.ID_SPLITTER)
+            # esperamos: year | owner | field | punto
+            if len(parts) < 4:
+                raise ValueError(f"Unexpected group_id format: {gid_str}")
+            year, owner, field = parts[0], parts[1], parts[2]
+            key = (owner, field)
+
+            if key not in by_field_year:
+                by_field_year[key] = {}
+            by_field_year[key].setdefault(year, []).append(gid_str)
+
+        train_ids: List[str] = []
+        val_ids: List[str] = []
+
+        for (owner, field), year_dict in by_field_year.items():
+            years = sorted(year_dict.keys())
+            if not years:
+                continue
+
+            # Elegimos el año de holdout
+            if self.holdout_strategy == "latest":
+                holdout_year = years[-1]
+            else:  # 'earliest'
+                holdout_year = years[0]
+
+            if len(years) == 1:
+                # Solo una anualidad para este campo: todo a train, nada a val
+                train_years = years
+                val_years: List[str] = []
+            else:
+                val_years = [holdout_year]
+                train_years = [y for y in years if y != holdout_year]
+
+            for y in train_years:
+                train_ids.extend(year_dict[y])
+            for y in val_years:
+                val_ids.extend(year_dict[y])
+
+        # Seguridad: si por lo que sea no hay validación, explota explícito
+        if len(val_ids) == 0:
             raise RuntimeError(
-                f"No se encuentra columna de IDs ni '{dataset_index.COLUMN_ID}' "
-                f"ni '{COLUMN_ID}' en {dataset_index_path}"
+                "PerFieldYearHoldoutSplitGenerator produjo 0 muestras de validación. "
+                "Probablemente todos los campos tienen una sola anualidad; "
+                "en ese caso este tipo de split no es aplicable."
             )
 
-        splits = self.generate_splits(all_ids)
-        output_dir = pathlib.Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        splits: Dict[str, DatasetSplit] = {
+            dataset_constants.TRAIN_SPLIT_NAME: DatasetSplit(
+                dataset_constants.TRAIN_SPLIT_NAME, train_ids
+            ),
+            dataset_constants.VALIDATION_SPLIT_NAME: DatasetSplit(
+                dataset_constants.VALIDATION_SPLIT_NAME, val_ids
+            ),
+        }
+        return splits
 
-        for split in splits.values():
-            split.persist(output_dir)
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Para que Experiment pueda serializar el generador y reconstruirlo
+        con generators_factory.from_dict.
+        """
+        return {
+            "class_name": self.__class__.__name__,
+            "holdout_strategy": self.holdout_strategy,
+        }
+
