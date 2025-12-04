@@ -1,5 +1,6 @@
-name: grano_experiments
+name: /Users/gtaddei/Desktop/Progetti/Grano.IT/Risorse/python/grano_experiments
 channels:
+  - https://conda.anaconda.org/conda-forge
   - conda-forge
   - defaults
 dependencies:
@@ -9,3 +10,7 @@ dependencies:
   - pytorch-forecasting
   - h5py
   - psutil
+  - matplotlib
+  - geopandas
+
+prefix: /Users/gtaddei/Desktop/Progetti/Grano.IT/Risorse/python/grano_experiments

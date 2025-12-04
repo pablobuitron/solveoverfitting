@@ -19,18 +19,12 @@ Notes:
 """
 import pathlib
 import time
-import os
 import torch
-torch.set_float32_matmul_precision("high")
 from lightning.pytorch import loggers as lightning_loggers
 import pytorch_forecasting
 import lightning.pytorch
-from lightning.pytorch.callbacks import EarlyStopping
 from pytorch_forecasting import metrics as ptf_metrics, TemporalFusionTransformer
 import logging
-
-from lightning.pytorch.callbacks import ModelCheckpoint
-from .monitoring import StepStatsCallback, ResourceMonitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -131,7 +125,7 @@ class Trainer:
         :param output_dir: Directory where output files such as logs and checkpoints will be saved.
         """
         logger.info('Instantiating model...')
-        model_training_config = self.training_config.get('model', {})
+        model_training_config = self.training_config['model']
         model = TemporalFusionTransformer.from_dataset(
             # dataset
             training_dataset,
@@ -144,8 +138,8 @@ class Trainer:
             learning_rate=model_training_config['learning_rate'],
             dropout=model_training_config['dropout'],
             loss=model_training_config['loss'],
-            weight_decay=model_training_config.get('weight_decay', 0.0),
             reduce_on_plateau_patience=model_training_config['reduce_on_plateau_patience'],
+            weight_decay=model_training_config['weight_decay'],
             log_interval=model_training_config['log_interval'],
             logging_metrics=model_training_config['logging_metrics'],
         )
@@ -159,17 +153,6 @@ class Trainer:
             save_dir=output_dir.parent,
             name=output_dir.name,
         )
-        callbacks = []
-        early_stopping_config = self.training_config.get('early_stopping')
-        if early_stopping_config:
-            callbacks.append(
-                EarlyStopping(
-                    monitor=early_stopping_config.get('monitor', 'val_loss'),
-                    mode=early_stopping_config.get('mode', 'min'),
-                    patience=early_stopping_config.get('patience', 5),
-                    min_delta=early_stopping_config.get('min_delta', 0.0),
-                )
-            )
         # memo: depending on lightning version, the package to be used is lightning.pytorch or pytorch_lightning
         trainer = lightning.pytorch.Trainer(
             # mandatory parameters
@@ -184,7 +167,6 @@ class Trainer:
             # values that are not configurable right now:
             enable_progress_bar=True,
             enable_model_summary=True,
-            callbacks=callbacks,
         )
         logger.info('Lightning trainer instantiated.')
 

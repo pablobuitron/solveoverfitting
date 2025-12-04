@@ -5,3 +5,5 @@ __pycache__
 lightning_logs
 grano_it_dataset
 experiments
+debug_experiments
+dev_experiments

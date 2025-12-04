@@ -1,10 +1,6 @@
-import pathlib
 from collections import defaultdict
-
-from .dataset_split import DatasetSplit
 from .. import dataset_index
 from . import splits_generator
-from .. import dataset_constants
 from . import generators_factory
 
 @generators_factory.register_splits_generator
@@ -15,17 +11,8 @@ class FieldSplitsGenerator(splits_generator.SplitsGenerator):
     def from_dict(cls, input_dict) -> 'FieldSplitsGenerator':
         return cls()
 
-    def generate_splits_files(self, dataset_index_path: str | pathlib.Path, output_dir: str | pathlib.Path):
-        output_dir = pathlib.Path(output_dir)
-        self._output_dir_exists(output_dir)
 
-        ds_index = dataset_index.DatasetIndex(dataset_index_path)
-        splits = self.generate_splits(ds_index.get_all_ids())
-
-        splits_dir = self._create_splits_dir(output_dir)
-        [split.persist(splits_dir) for split in splits.values()]
-
-    def generate_splits(self, ids: list[str]) -> dict[str, DatasetSplit]:
+    def _create_splits(self, ids: list[str]) -> tuple[list, list, list]:
         field_to_count = defaultdict(int)
         field_to_ids = defaultdict(list)
         for id_ in ids:
@@ -38,27 +25,18 @@ class FieldSplitsGenerator(splits_generator.SplitsGenerator):
         chunk_len = len(sorted_fields) // 3
 
         train_fields = sorted_fields[:chunk_len]
-        train_ids = []
+        train_split = []
         for field in train_fields:
-            train_ids += field_to_ids[field]
-        train_split = DatasetSplit(dataset_constants.TRAIN_SPLIT_NAME, train_ids)
+            train_split += field_to_ids[field]
 
         val_fields = sorted_fields[chunk_len:chunk_len * 2]
-        val_ids = []
+        val_split = []
         for field in val_fields:
-            val_ids += field_to_ids[field]
-        val_split = DatasetSplit(dataset_constants.VALIDATION_SPLIT_NAME, val_ids)
+            val_split += field_to_ids[field]
 
         test_fields = sorted_fields[chunk_len * 2:]
-        test_ids = []
+        test_split = []
         for field in test_fields:
-            test_ids += field_to_ids[field]
-        test_split = DatasetSplit(dataset_constants.TEST_SPLIT_NAME, test_ids)
+            test_split += field_to_ids[field]
 
-        result = {
-            train_split.split_name: train_split,
-            val_split.split_name: val_split,
-            test_split.split_name: test_split
-        }
-
-        return result
+        return train_split, val_split, test_split

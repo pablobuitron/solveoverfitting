@@ -4,6 +4,7 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 import pandas as pd
 import pytorch_forecasting
+from pandas import DataFrame
 from pytorch_forecasting import TimeSeriesDataSet
 
 from .utils import timestamps_utils, ds_utils, file_cache
@@ -23,7 +24,9 @@ STATIC_FEATURES_PREFIX = 'static_'
 DYNAMIC_FEATURES_PREFIX = 'observed_'
 
 
+
 class DatasetBuilder:
+    # TODO |> modificare tutti i riferimenti a TimeSeriesDataset
     """
     Builder for a PyTorch Forecasting TimeSeriesDataSet tailored to the Grano.IT pipeline.
 
@@ -157,15 +160,15 @@ class DatasetBuilder:
         self.static_categoricals = configuration['static_categoricals']
         self.static_reals = configuration['static_reals']
         self.time_varying_unknown_reals = configuration['time_varying_unknown_reals']
-        self.allow_missing_timesteps = configuration['allow_missing_timesteps']
-        self.add_relative_time_idx = configuration['add_relative_time_idx']
+        # self.allow_missing_timesteps = configuration['allow_missing_timesteps']
+        # self.add_relative_time_idx = configuration['add_relative_time_idx']
 
         # dependencies
         self._static_data_cache = file_cache.Hdf5FilesCache(root_dir)
         self._dynamic_data_cache = file_cache.Hdf5FilesCache(root_dir)
         self._preprocessing_router = preprocessing.router.PreprocessingRouter()
 
-    def build(self) -> dict[str, TimeSeriesDataSet]:
+    def build(self) -> dict[str, DataFrame]:
         """
         Build a TimeSeriesDataSet ready for training/evaluation.
 
@@ -188,9 +191,7 @@ class DatasetBuilder:
 
         data = self._preprocess_final_dataframe(data, backup_group_id_col=True)
         data = self._divide_in_splits(data, use_group_id_backup_col=True)
-        result = self._instantiate_timeseries_datasets(data)
-
-        return result
+        return data
 
     def _build_dataframe(self) -> pd.DataFrame:
         """Iterate through wheat fields and build the full dataset DataFrame.
@@ -309,54 +310,6 @@ class DatasetBuilder:
             result[split.split_name] = split_data
 
         return result
-
-    def _instantiate_timeseries_datasets(
-            self,
-            splits_to_data: dict,
-            split_for_normalization: Optional[str] = 'train',
-    ) -> Dict[str, TimeSeriesDataSet]:
-        """
-        Instantiate PyTorch Forecasting TimeSeriesDataSet objects for all provided splits,
-        handling normalization in a consistent and configurable way.
-
-        This method acts as the orchestration layer for dataset creation:
-          - If `split_for_normalization` is a split name (e.g., "train"), that split is used
-            to compute all normalization and scaling parameters (such as mean/std for features
-            and group-based normalization for the target). All other splits are then built
-            from those.
-          - If `split_for_normalization` is None, every split is built independently with
-            `target_normalizer=None`. In this mode, no target normalization is applied, and
-            PyTorch Forecasting will handle feature scaling internally for each dataset
-            based on its own data distribution.
-
-        Args:
-            splits_to_data: Mapping {split_name -> DataFrame} containing all splits.
-            split_for_normalization: Split name to use as normalization reference (default "train").
-                If None, disables target normalization entirely.
-
-        Returns:
-            Dict[str, TimeSeriesDataSet]: A dictionary mapping split names to dataset instances.
-
-        Raises:
-            ValueError: If `split_for_normalization` is specified but not found in splits_to_data.
-        """
-        if split_for_normalization is None:
-            return self._build_datasets_without_normalization(splits_to_data)
-
-        if split_for_normalization not in splits_to_data:
-            raise ValueError(
-                f"`split_for_normalization='{split_for_normalization}'` not found in splits: "
-                f"{list(splits_to_data.keys())}"
-            )
-
-        ref_name = split_for_normalization
-        reference_ds = self._build_reference_dataset(splits_to_data[ref_name], ref_name)
-
-        return self._build_other_datasets_from_reference(
-            splits_to_data=splits_to_data,
-            reference_ds=reference_ds,
-            reference_name=ref_name,
-        )
 
     def _cast_static_categoricals(self, df: pd.DataFrame) -> pd.DataFrame:
         for static_categorical in self.static_categoricals:
@@ -563,71 +516,3 @@ class DatasetBuilder:
         for t_idx, t in enumerate(parsed_timestamps):
             upsampled_data[:, timestamps_id_mapping[t], :] = data[:, t_idx, :]
         return upsampled_data
-
-    def _base_timeseries_kwargs(self, split_name: str, source: pd.DataFrame) -> dict:
-        """Common kwargs for TimeSeriesDataSet to avoid duplication."""
-        max_encoder_length = int(source.groupby(COLUMN_GROUP_ID)["time_idx"].count().max())
-        min_encoder_length = int(max_encoder_length / 3 * 2)
-        return dict(
-            time_idx=COLUMN_TIME_IDX,
-            target=COLUMN_TARGET,
-            group_ids=[COLUMN_GROUP_ID],
-            static_categoricals=self.static_categoricals,
-            static_reals=self.static_reals,
-            time_varying_unknown_reals=self.time_varying_unknown_reals,
-            allow_missing_timesteps=self.allow_missing_timesteps,
-            add_relative_time_idx=self.add_relative_time_idx,
-            predict_mode=self._decide_predict_mode(split_name),
-            min_encoder_length=min_encoder_length,
-            max_encoder_length=max_encoder_length,
-            max_prediction_length=1,
-        )
-
-    def _build_reference_dataset(self, df, split_name: str) -> TimeSeriesDataSet:
-        """Build the dataset used to estimate normalization params (usually 'train')."""
-        kwargs = self._base_timeseries_kwargs(split_name, df)
-        # Memo: normalization may give problems on MPS if the output is in float64 instead of float32
-        reference_ds = TimeSeriesDataSet(
-            data=df,
-            target_normalizer=pytorch_forecasting.data.TorchNormalizer(method='robust'),
-            **kwargs,
-        )
-        return reference_ds
-
-    def _build_other_datasets_from_reference(
-            self,
-            splits_to_data: dict,
-            reference_ds: TimeSeriesDataSet,
-            reference_name: str,
-    ) -> Dict[str, TimeSeriesDataSet]:
-        """Reuse the reference dataset's normalization/scalers for all other splits."""
-        result: Dict[str, TimeSeriesDataSet] = {reference_name: reference_ds}
-        for split_name, df in splits_to_data.items():
-            if split_name == reference_name:
-                continue
-            result[split_name] = TimeSeriesDataSet.from_dataset(
-                reference_ds,
-                df,
-                predict=self._decide_predict_mode(split_name),
-            )
-        return result
-
-    def _build_datasets_without_normalization(self, splits_to_data: dict) -> Dict[str, TimeSeriesDataSet]:
-        """Create independent datasets, explicitly disabling target normalization."""
-        result: Dict[str, TimeSeriesDataSet] = {}
-        for split_name, df in splits_to_data.items():
-            kwargs = self._base_timeseries_kwargs(split_name, df)
-            ds = TimeSeriesDataSet(
-                data=df,
-                target_normalizer=None,  # explicit: do not normalize target
-                **kwargs,
-            )
-            result[split_name] = ds
-        return result
-
-    # noinspection PyMethodMayBeStatic
-    def _decide_predict_mode(self, split: str) -> bool:
-        if split == 'train':
-            return False
-        else:
-            return True

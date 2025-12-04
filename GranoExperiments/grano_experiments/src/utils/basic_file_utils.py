@@ -3,6 +3,7 @@ import json
 import yaml
 import pathlib
 from glob import glob
+import pandas as pd
 
 def load_yaml(path):
     file_check(path)
@@ -44,3 +45,11 @@ def glob_single_file(search_string: str | pathlib.Path) -> pathlib.Path:
         raise RuntimeError(f"More than one file searched with {search_string} found")
     file = files[0]
     return pathlib.Path(file)
+
+def load_csv(csv_path: str | pathlib.Path) -> pd.DataFrame:
+    csv_path = pathlib.Path(csv_path)
+    if not csv_path.exists():
+        raise FileNotFoundError(f"File {csv_path} does not exist")
+    elif not csv_path.is_file():
+        raise FileNotFoundError(f"File {csv_path} is not a file")
+    return pd.read_csv(csv_path)

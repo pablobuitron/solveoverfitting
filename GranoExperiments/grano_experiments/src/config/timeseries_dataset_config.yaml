@@ -12,8 +12,44 @@ wheat_fields_to_exclude:
 # the specified name can refer to the macro feature (e.g. 'evi', 'evaporation_from_bare_soil', so using the name of the macro feature, not the column name)
 # or a specific feature (e.g. 'observed_evaporation_from_bare_soil_max', in this case using the name of the final column)
 features_to_exclude:
+# -------------------------------------------------------
+# Experiment 21/11/2025:
+# Trying to train only with satellite indices
+#  - skin_temperature
+#  - total_precipitation
+#  - crusting
+#  - dimp
+#  - erodi
+#  - oc_top
+#  - sand1
+#  - silt1
+#  - slopedo
+#  - eawc_top
+#  - textureusda
+#  - awc
+#  - bulk_density
+#  - coarse_fragments
+#  - clay
+# -------------------------------------------------------
+# Experiment 20/11/2025:
+# Since the model is prone to overfitting, I am trying to keep just the most essential features.
+#  - evaporation_from_bare_soil
+#  - soil_temperature_level_1
+#  - soil_temperature_level_2
+#  - soil_temperature_level_3
+#  - evaporation_from_the_top_of_canopy
+#  - evaporation_from_vegetation_transpiration
+#  - surface_net_solar_radiation
+#  - volumetric_soil_water_layer_1
+#  - volumetric_soil_water_layer_2
+#  - volumetric_soil_water_layer_3
+# ------------------------------------------------------
+# Satellite indices that are too unstable and would need a more careful preprocessing
   - evi
-  - simple_ratio
+  - simple_ratio # too noisy
+# ------------------------------------------------------
+# Metrics that were deemed unessential during a call with CREA
+# with the purpose of making data lighter
   - observed_evaporation_from_bare_soil_min
   - observed_evaporation_from_bare_soil_max
   - observed_evaporation_from_bare_soil_std
@@ -46,6 +82,7 @@ features_to_exclude:
   - observed_volumetric_soil_water_layer_3_min
   - observed_volumetric_soil_water_layer_3_max
   - observed_volumetric_soil_water_layer_3_std
+# ------------------------------------------------------
 
 
 
@@ -53,8 +90,6 @@ features_to_exclude:
 # https://pytorch-forecasting.readthedocs.io/en/v1.4.0/api/pytorch_forecasting.data.timeseries._timeseries.TimeSeriesDataSet.html
 allow_missing_timesteps: true
 add_relative_time_idx: false
-add_categorical_na: true
-
 
 # ------------- TimeSeriesDataset columns configuration -------------
 # this is needed for timeseries dataset builder to know which features (in other terms which columns)

@@ -1,14 +1,6 @@
-import pathlib
 from typing import Tuple
 import random
-
-import pandas as pd
-
-from .dataset_split import DatasetSplit
-from .. import dataset_constants
-from .. import dataset_index
 from . import splits_generator
-from . import dataset_split
 from . import generators_factory
 
 @generators_factory.register_splits_generator
@@ -52,31 +44,6 @@ class RandomSplitGenerator(splits_generator.SplitsGenerator):
         self.val_split_ratio = val_split_ratio
         random.seed(self.seed)
 
-    def generate_splits_files(self, dataset_index_path: str | pathlib.Path, output_dir: str | pathlib.Path):
-        output_dir = pathlib.Path(output_dir)
-        self._output_dir_exists(output_dir)
-
-        ds_index = dataset_index.DatasetIndex(dataset_index_path)
-        splits = self.generate_splits(ds_index.get_all_ids())
-
-        splits_dir = self._create_splits_dir(output_dir)
-        [split.persist(splits_dir) for split in splits.values()]
-
-
-    def generate_splits(self, ids: list[str]) -> dict[str, DatasetSplit]:
-
-        train_split, val_split, test_split = self._create_splits(ids)
-        train_split = dataset_split.DatasetSplit(dataset_constants.TRAIN_SPLIT_NAME, train_split)
-        val_split = dataset_split.DatasetSplit(dataset_constants.VALIDATION_SPLIT_NAME, val_split)
-        test_split = dataset_split.DatasetSplit(dataset_constants.TEST_SPLIT_NAME, test_split)
-
-        result = {
-            train_split.split_name: train_split,
-            val_split.split_name: val_split,
-            test_split.split_name: test_split,
-        }
-
-        return result
 
     def _create_splits(self, ids: list[str]) -> Tuple[list, list, list]:
         ids = list(set(ids))

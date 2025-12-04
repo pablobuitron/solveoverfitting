@@ -29,11 +29,11 @@ TS_CFG_PATH = (
 
 def build_long_df_and_grouped_split():
     """
-    Build the "long" DataFrame (one row per group_id, time_idx)
+    Build the 'long' DataFrame (one row per group_id, time_idx)
     using the same DatasetBuilder as the TFT, but without creating a TimeSeriesDataSet.
 
     Then perform a 70/30 train/validation split grouping by (year, field),
-    i.e. by "field-year", to mimic the grouped split used in the TFT experiment.
+    i.e. by 'field-year', to mimic the grouped split used in the TFT experiment.
     """
 
     # 1) Load the time series dataset config
@@ -44,7 +44,6 @@ def build_long_df_and_grouped_split():
     ds_idx = dataset_index.DatasetIndex(index_file)
 
     # 3) Create the DatasetBuilder without predefined splits
-    #    (we'll handle the train/val split manually here).
     builder = timeseries_dataset.DatasetBuilder(
         root_dir=DATASET_ROOT,
         ds_index=ds_idx,
@@ -54,22 +53,14 @@ def build_long_df_and_grouped_split():
         quick_debug=False,
     )
 
-    # 4) Build the "long" DataFrame
-    #    This is essentially what builder.build() does, but without
-    #    creating splits or a TimeSeriesDataSet object.
+    # 4) Build the 'long' DataFrame
     data = builder._build_dataframe()
-
-    # Close HDF5 caches, just like builder.build() would do
-    builder._static_data_cache.close_files()
-    builder._dynamic_data_cache.close_files()
 
     # Final preprocessing (type casting, removing weird NaNs,
     # mapping group_id to ints, etc.).
-    # backup_group_id_col=True -> creates COLUMN_TMP_GROUP_ID_STR
-    # with the original string group_id.
     data = builder._preprocess_final_dataframe(data, backup_group_id_col=True)
 
-    # 5) Build a "field-year" identifier from the backup column
+    # 5) Build a 'field-year' identifier from the backup column
     tmp_col = timeseries_dataset.COLUMN_TMP_GROUP_ID_STR
     splitter = dataset_index.ID_SPLITTER  # usually '|'
 
@@ -94,30 +85,46 @@ def build_long_df_and_grouped_split():
     return train_df, val_df, ts_cfg
 
 
+def _compute_slope(series: pd.Series) -> float:
+    """
+    Compute a simple linear slope over the sequence index (0..len-1).
+    If the series is constant or too short, return 0.0.
+    """
+    n = len(series)
+    if n < 2:
+        return 0.0
+
+    y = series.values
+    if np.allclose(y, y[0]):
+        return 0.0
+
+    x = np.arange(n, dtype=float)
+    a, _ = np.polyfit(x, y, 1)  # y = a*x + b
+    return float(a)
+
+
 def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
     """
-    Starting from the "long" DataFrame (group_id, time_idx, target, features),
-    build a "per group_id" DataFrame with:
+    'Versión simple' de features:
 
-      - static_categoricals (as is: one value per group_id)
-      - static_reals
-      - aggregated (mean, max, min, std) time_varying_unknown_real features
-      - a single target (yield) per group_id
+      - static_categoricals + static_reals
+      - time_varying_unknown_reals -> mean, max, min, std, last, slope
+      - target: median por group_id
 
-    Returns: X (features), y (target), and the aggregated DataFrame for inspection.
+    Devuelve X (DataFrame), y (np.array), y full (DataFrame con target).
     """
     gid_col = timeseries_dataset.COLUMN_GROUP_ID
     target_col = timeseries_dataset.COLUMN_TARGET
 
     group = df.groupby(gid_col)
 
-    # Target: assumed constant per group_id -> take the first value
-    target = group[target_col].first()
+    # Target: median para reducir outliers
+    target = group[target_col].median()
 
     # Static features
-    static_cats = ts_cfg["static_categoricals"]
-    static_reals = ts_cfg["static_reals"]
-    static_cols = [c for c in static_cats + static_reals if c in df.columns]
+    static_cats = ts_cfg.get("static_categoricals", [])
+    static_reals = ts_cfg.get("static_reals", [])
+    static_cols = [c for c in (static_cats + static_reals) if c in df.columns]
 
     if static_cols:
         static_part = group[static_cols].first()
@@ -125,17 +132,27 @@ def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
         static_part = pd.DataFrame(index=target.index)
 
     # Time-varying features
-    tv_cols = [c for c in ts_cfg["time_varying_unknown_reals"] if c in df.columns]
+    tv_cols = [c for c in ts_cfg.get("time_varying_unknown_reals", []) if c in df.columns]
 
     agg_frames = []
     for col in tv_cols:
         g = group[col]
+
+        means = g.mean()
+        maxs = g.max()
+        mins = g.min()
+        stds = g.std()
+        lasts = g.last()
+        slopes = g.apply(_compute_slope)
+
         agg = pd.DataFrame(
             {
-                f"{col}_mean": g.mean(),
-                f"{col}_max": g.max(),
-                f"{col}_min": g.min(),
-                f"{col}_std": g.std(),
+                f"{col}_mean": means,
+                f"{col}_max": maxs,
+                f"{col}_min": mins,
+                f"{col}_std": stds,
+                f"{col}_last": lasts,
+                f"{col}_slope": slopes,
             }
         )
         agg_frames.append(agg)
@@ -149,11 +166,11 @@ def make_aggregated_features(df: pd.DataFrame, ts_cfg: dict):
     full = pd.concat([static_part, dyn_part], axis=1)
     full[target_col] = target
 
-    # Basic NaN cleaning (simple but good enough for a baseline)
+    # Limpieza básica
     full = full.dropna(axis=0)
 
-    y = full[target_col].values
     X = full.drop(columns=[target_col])
+    y = full[target_col].values
 
     return X, y, full
 
@@ -164,29 +181,65 @@ def main():
 
     print(f"Train rows: {len(train_df)}, Val rows: {len(val_df)}")
 
-    print("Aggregating features per group_id (point within a field)...")
-    X_train, y_train, agg_train = make_aggregated_features(train_df, ts_cfg)
-    X_val, y_val, agg_val = make_aggregated_features(val_df, ts_cfg)
+    print("Aggregating SIMPLE features per group_id...")
+    X_train, y_train, _ = make_aggregated_features(train_df, ts_cfg)
+    X_val, y_val, _ = make_aggregated_features(val_df, ts_cfg)
 
     print(f"Train groups: {X_train.shape[0]}, features: {X_train.shape[1]}")
     print(f"Val groups:   {X_val.shape[0]}, features: {X_val.shape[1]}")
 
-    print("Training RandomForestRegressor baseline (RMSE on unseen field-years)...")
-    rf = RandomForestRegressor(
-        n_estimators=500,
-        max_depth=None,
-        min_samples_leaf=3,
-        n_jobs=-1,          # use all available cores
-        random_state=42,
+    # Pequeño grid de hiperparámetros razonables
+    base_params = dict(
+        n_estimators=1000,
+        n_jobs=-1,
+        random_state=403,
+        bootstrap=True,
     )
-    rf.fit(X_train, y_train)
 
-    preds_val = rf.predict(X_val)
-    rmse_val = np.sqrt(mean_squared_error(y_val, preds_val))
+    configs = [
+        # max_depth, min_leaf, min_split, max_features, max_samples
+        dict(max_depth=9,  min_samples_leaf=8,  min_samples_split=20, max_features="sqrt", max_samples=0.7),
+        dict(max_depth=9,  min_samples_leaf=10, min_samples_split=20, max_features="sqrt", max_samples=0.7),
+        dict(max_depth=10, min_samples_leaf=8,  min_samples_split=20, max_features="sqrt", max_samples=0.7),
+        dict(max_depth=10, min_samples_leaf=8,  min_samples_split=30, max_features="sqrt", max_samples=0.7),
+        dict(max_depth=10, min_samples_leaf=10, min_samples_split=30, max_features="sqrt", max_samples=0.6),
+        dict(max_depth=11, min_samples_leaf=8,  min_samples_split=20, max_features="log2", max_samples=0.7),
+        dict(max_depth=11, min_samples_leaf=10, min_samples_split=20, max_features="log2", max_samples=0.7),
+        dict(max_depth=12, min_samples_leaf=10, min_samples_split=40, max_features="log2", max_samples=0.6),
+    ]
 
-    print("\n=== RANDOM FOREST BASELINE (grouped by field-year) ===")
-    print(f"RMSE_val: {rmse_val:.4f}")
-    print("(For reference: TFT grouped ~ 4.02 in experiment 1851)")
+    results = []
+
+    from copy import deepcopy
+    from sklearn.ensemble import RandomForestRegressor
+
+    for i, cfg in enumerate(configs, start=1):
+        params = deepcopy(base_params)
+        params.update(cfg)
+
+        print("\n--------------------------------------------------")
+        print(f"Config {i}/{len(configs)}: {params}")
+        rf = RandomForestRegressor(**params)
+
+        rf.fit(X_train, y_train)
+
+        y_train_pred = rf.predict(X_train)
+        y_val_pred = rf.predict(X_val)
+
+        rmse_train = np.sqrt(mean_squared_error(y_train, y_train_pred))
+        rmse_val = np.sqrt(mean_squared_error(y_val, y_val_pred))
+
+        print(f"  RMSE_train = {rmse_train:.4f}")
+        print(f"  RMSE_val   = {rmse_val:.4f}")
+
+        results.append((rmse_val, rmse_train, params))
+
+    # Ordenar por RMSE_val
+    results.sort(key=lambda x: x[0])
+
+    print("\n=========== SUMMARY (sorted by RMSE_val) ===========")
+    for rmse_val, rmse_train, params in results:
+        print(f"RMSE_val={rmse_val:.4f} | RMSE_train={rmse_train:.4f} | params={params}")
 
 
 if __name__ == "__main__":
